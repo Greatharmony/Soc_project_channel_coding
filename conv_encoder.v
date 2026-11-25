@@ -1,29 +1,63 @@
-module conv_encoder #(parameter N=3) 
-(input wire clk, input wire reset, input wire [N-1:0] din, input wire sel,
-output reg dout0, dout1, output reg [(2*N)-1:0] out);
 
-// Shift register (Constraint length K = 3 ?? ???? ??? K-1 = 2?)
-reg [1:0] shift_reg;
+module conv_encoder #(parameter N=3)
+(
+    input wire clk,
+    input wire reset,
+    input wire [N-1:0] din,
+    input wire sel,
+    input wire err_sw,
 
-wire [N+1:0] temp;
-assign temp = {din, shift_reg};
+    output reg dout0,
+    output reg dout1,
+    output reg [(2*N)-1:0] out
+);
+
+// K = 3, Memory = 2
+reg [1:0] temp;
+reg [1:0] next_temp;
+
+reg [(2*N)-1:0] next_out;
+
 integer k;
+
+// Combinational Logic
+always @(*) begin
+    	next_temp = temp;
+    	next_out = {(2*N){1'b0}};
+
+   	for (k=0; k<N; k=k+1) begin
+        	// G1 = 1 + D + D^2
+        	next_out[(2*N-1)-(2*k)] = din[N-1-k] ^ next_temp[1] ^ next_temp[0];
+        	// G2 = 1 + D^2
+       		next_out[(2*N-2)-(2*k)] = din[N-1-k] ^ next_temp[0];
+       		// Update temporary shift register
+        	next_temp = {din[N-1-k], next_temp[1]};
+    	end
+	if (err_sw) begin
+        	next_out[(2*N-1) - 2*1] = ~next_out[(2*N-1) - 2*1]; // N=3일 때 next_out[3]
+    	end
+end
+
+// Sequential Logic
 always @(posedge clk or negedge reset) begin
-        if (!reset) begin 
-            shift_reg <= 2'b00;
-            dout0     <= 1'b0;
-            dout1     <= 1'b0; 
-        end 
-	else if (!sel) begin
-		for(k = 0; k <N; k=k+1) begin
-            // G1 = 1 + D + D^2  
-            // G2 = 1 + D^2
-            	dout0 <= temp[N+1-k] ^ temp[N-k] ^ temp[N-1-k];
-            	dout1 <= temp[N+1-k] ^ temp[N-1-k];
-            	out[((N - k) * 2 - 1) -: 2] <= {(temp[N+1-k] ^ temp[N-k] ^ temp[N-1-k]), (temp[N+1-k] ^ temp[N-1-k])};
-		end
-			shift_reg <= din[1:0];
-        end
+
+    if (!reset) begin
+        temp <= 2'b00;
+        out <= {(2*N){1'b0}};
+        dout0 <= 1'b0;
+        dout1 <= 1'b0;
+    end
+
+    else if (!sel) begin
+
+        temp <= next_temp;
+        out <= next_out;
+
+        dout0 <= next_out[1];
+        dout1 <= next_out[0];
+
+    end
+
 end
 
 endmodule
